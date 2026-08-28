@@ -36,19 +36,82 @@ async function run() {
 
     const db = client.db("tripzen");
     const destinationCollection = db.collection("destinations");
-
+    const bookingCollection = db.collection("Bookings")
     // get api
 
     app.get("/destination", async (req, res) => {
-      const result = await destinationCollection.find().toArray();
-      res.send(result);
+  try {
+    const { location, duration, budget, people } = req.query;
+
+    const query = {};
+
+    // Location search
+    if (location) {
+      query.$or = [
+        {
+          destinationName: {
+            $regex: location,
+            $options: "i",
+          },
+        },
+        {
+          country: {
+            $regex: location,
+            $options: "i",
+          },
+        },
+      ];
+    }
+
+    // Duration filter
+    if (duration) {
+      query.duration = {
+        $lte: Number(duration),
+      };
+    }
+
+    // Budget filter
+    if (budget) {
+      query.price = {
+        $lte: Number(budget),
+      };
+    }
+
+    // People filter
+    if (people) {
+      query.maxPeople = {
+        $gte: Number(people),
+      };
+    }
+
+    const result = await destinationCollection
+      .find(query)
+      .toArray();
+
+    res.send(result);
+  } catch (error) {
+    console.error("Destination search error:", error);
+
+    res.status(500).send({
+      message: "Failed to fetch destinations",
+      error: error.message,
     });
+  }
+});
 
     app.get("/destination/:id", async (req, res) => {
       const { id } = req.params;
       const result = await destinationCollection.findOne({
         _id: new ObjectId(id),
       });
+      res.send(result);
+    });
+
+
+    // get api
+    app.get("/booking", async (req, res) => {
+      const bookingData = req.body;
+      const result = await bookingCollection.insertOne(bookingData).then();
       res.send(result);
     });
 
