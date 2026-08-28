@@ -13,9 +13,10 @@ app.get("/", (req, res) => {
   res.send("Hello World!");
 });
 
-// mongodb start from hare
+// mongodb start from here
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+
 const uri = process.env.MONGODB_URI;
 
 // Create a MongoClient with a MongoClientOptions object to set the Stable API version
@@ -29,136 +30,260 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    // Connect the client to the server	(optional starting in v4.7)
+    // Connect the client to the server
     await client.connect();
 
-    // api start from hare
+    // api start from here
 
     const db = client.db("tripzen");
+
     const destinationCollection = db.collection("destinations");
-    const bookingCollection = db.collection("Bookings")
-    // get api
+    const bookingCollection = db.collection("Bookings");
+
+    // ================= DESTINATION GET API =================
 
     app.get("/destination", async (req, res) => {
-  try {
-    const { location, duration, budget, people } = req.query;
+      try {
+        const { location, duration, budget, people } = req.query;
 
-    const query = {};
+        const query = {};
 
-    // Location search
-    if (location) {
-      query.$or = [
-        {
-          destinationName: {
-            $regex: location,
-            $options: "i",
-          },
-        },
-        {
-          country: {
-            $regex: location,
-            $options: "i",
-          },
-        },
-      ];
-    }
+        // Location search
+        if (location) {
+          query.$or = [
+            {
+              destinationName: {
+                $regex: location,
+                $options: "i",
+              },
+            },
+            {
+              country: {
+                $regex: location,
+                $options: "i",
+              },
+            },
+          ];
+        }
 
-    // Duration filter
-    if (duration) {
-      query.duration = {
-        $lte: Number(duration),
-      };
-    }
+        // Duration filter
+        if (duration) {
+          query.duration = {
+            $lte: Number(duration),
+          };
+        }
 
-    // Budget filter
-    if (budget) {
-      query.price = {
-        $lte: Number(budget),
-      };
-    }
+        // Budget filter
+        if (budget) {
+          query.price = {
+            $lte: Number(budget),
+          };
+        }
 
-    // People filter
-    if (people) {
-      query.maxPeople = {
-        $gte: Number(people),
-      };
-    }
+        // People filter
+        if (people) {
+          query.maxPeople = {
+            $gte: Number(people),
+          };
+        }
 
-    const result = await destinationCollection
-      .find(query)
-      .toArray();
+        const result = await destinationCollection.find(query).toArray();
 
-    res.send(result);
-  } catch (error) {
-    console.error("Destination search error:", error);
+        res.send(result);
+      } catch (error) {
+        console.error("Destination search error:", error);
 
-    res.status(500).send({
-      message: "Failed to fetch destinations",
-      error: error.message,
+        res.status(500).send({
+          message: "Failed to fetch destinations",
+          error: error.message,
+        });
+      }
     });
-  }
-});
+
+    // ================= SINGLE DESTINATION GET API =================
 
     app.get("/destination/:id", async (req, res) => {
-      const { id } = req.params;
-      const result = await destinationCollection.findOne({
-        _id: new ObjectId(id),
-      });
-      res.send(result);
+      try {
+        const { id } = req.params;
+
+        const result = await destinationCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res.status(404).send({
+            message: "Destination not found",
+          });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Destination details error:", error);
+
+        res.status(500).send({
+          message: "Failed to fetch destination details",
+          error: error.message,
+        });
+      }
     });
 
+    // ================= BOOKING POST API =================
 
-    // get api
-    app.get("/booking", async (req, res) => {
-      const bookingData = req.body;
-      const result = await bookingCollection.insertOne(bookingData).then();
-      res.send(result);
+    app.post("/booking", async (req, res) => {
+      try {
+        const bookingData = req.body;
+
+        const result = await bookingCollection.insertOne(bookingData);
+
+        res.send(result);
+      } catch (error) {
+        console.error("Booking creation error:", error);
+
+        res.status(500).send({
+          message: "Failed to create booking",
+          error: error.message,
+        });
+      }
     });
 
+    // ================= USER BOOKING GET API =================
 
-    // patch api
+    app.get("/booking/user/:userId", async (req, res) => {
+      try {
+        const { userId } = req.params;
 
-    app.patch("/destination/:id", async (req, res) => {
-      const { id } = req.params;
-      const updatedDestination = req.body;
-      const result = await destinationCollection.updateOne(
-        { _id: new ObjectId(id) },
-        { $set: updatedDestination }
-      );
-      res.send(result);
+        const result = await bookingCollection.find({ userId }).toArray();
+
+        res.send(result);
+      } catch (error) {
+        console.error("User bookings error:", error);
+
+        res.status(500).send({
+          message: "Failed to fetch bookings",
+          error: error.message,
+        });
+      }
+    });
+
+    // ================= SINGLE BOOKING GET API =================
+
+    app.get("/booking/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const result = await bookingCollection.findOne({
+          _id: new ObjectId(id),
+        });
+
+        if (!result) {
+          return res.status(404).send({
+            message: "Booking not found",
+          });
+        }
+
+        res.send(result);
+      } catch (error) {
+        console.error("Booking details error:", error);
+
+        res.status(500).send({
+          message: "Failed to fetch booking",
+          error: error.message,
+        });
+      }
+    });
+
+    //============= Booking CAncel API ==================
+
+    app.delete("/booking/:bookingId", async (req, res) => {
+
+    const {bookingId} = req.params;
+    const result = await bookingCollection.deleteOne({
+    _id: new ObjectId(bookingId),
+     })
+   res.json(result);
+
     })
 
+    // ================= DESTINATION PATCH API =================
 
-    // delete api
+    app.patch("/destination/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
 
-    app.delete("/destination/:id", async (req, res) => {
-      const { id } = req.params;
-      const result = await destinationCollection.deleteOne({
-        _id: new ObjectId(id),
-      });
-      res.send(result);
+        const updatedDestination = req.body;
+
+        const result = await destinationCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: updatedDestination },
+        );
+
+        res.send(result);
+      } catch (error) {
+        console.error("Destination update error:", error);
+
+        res.status(500).send({
+          message: "Failed to update destination",
+          error: error.message,
+        });
+      }
     });
 
+    // ================= DESTINATION DELETE API =================
 
-    // post api
+    app.delete("/destination/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+
+        const result = await destinationCollection.deleteOne({
+          _id: new ObjectId(id),
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.error("Destination delete error:", error);
+
+        res.status(500).send({
+          message: "Failed to delete destination",
+          error: error.message,
+        });
+      }
+    });
+
+    // ================= DESTINATION POST API =================
+
     app.post("/destination", async (req, res) => {
-      const newDestination = req.body;
-      console.log(newDestination);
-      const result = await destinationCollection.insertOne(newDestination);
-      res.send(result);
+      try {
+        const newDestination = req.body;
+
+        console.log(newDestination);
+
+        const result = await destinationCollection.insertOne(newDestination);
+
+        res.send(result);
+      } catch (error) {
+        console.error("Destination creation error:", error);
+
+        res.status(500).send({
+          message: "Failed to create destination",
+          error: error.message,
+        });
+      }
     });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
+
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!",
     );
   } finally {
-    // Ensures that the client will close when you finish/error
     // await client.close();
   }
 }
+
 run().catch(console.dir);
+
+// ================= SERVER =================
 
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
