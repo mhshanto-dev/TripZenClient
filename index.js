@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const { jwtVerify } = require("jose-cjs");
 
 const app = express();
 require("dotenv").config();
@@ -16,6 +17,7 @@ app.get("/", (req, res) => {
 // mongodb start from here
 
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+const { createRemoteJWKSet } = require("jose-cjs");
 
 const uri = process.env.MONGODB_URI;
 
@@ -27,6 +29,40 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 });
+
+// JWT start from here
+
+const JWKS = createRemoteJWKSet(new URL("http://localhost:3000/api/auth/jwks"));
+
+const verifyToken = async (req, res, next) => {
+  const authHeader = req.headers.authorization;
+
+  if (!authHeader) {
+    return res.status(401).send({
+      message: "Unauthorized",
+    });
+  }
+
+  const token = authHeader.split(" ")[1];
+
+  if (!token) {
+    return res.status(401).send({
+      message: "Unauthorized",
+    });
+  }
+
+  try {
+    await jwtVerify(token, JWKS);
+
+    next();
+  } catch (error) {
+    console.error("JWT verification error:", error);
+
+    return res.status(401).send({
+      message: "Unauthorized",
+    });
+  }
+};
 
 async function run() {
   try {
@@ -102,7 +138,7 @@ async function run() {
 
     // ================= SINGLE DESTINATION GET API =================
 
-    app.get("/destination/:id", async (req, res) => {
+    app.get("/destination/:id", verifyToken, async (req, res) => {
       try {
         const { id } = req.params;
 
@@ -129,7 +165,7 @@ async function run() {
 
     // ================= BOOKING POST API =================
 
-    app.post("/booking", async (req, res) => {
+    app.post("/booking", verifyToken, async (req, res) => {
       try {
         const bookingData = req.body;
 
@@ -195,14 +231,12 @@ async function run() {
     //============= Booking CAncel API ==================
 
     app.delete("/booking/:bookingId", async (req, res) => {
-
-    const {bookingId} = req.params;
-    const result = await bookingCollection.deleteOne({
-    _id: new ObjectId(bookingId),
-     })
-   res.json(result);
-
-    })
+      const { bookingId } = req.params;
+      const result = await bookingCollection.deleteOne({
+        _id: new ObjectId(bookingId),
+      });
+      res.json(result);
+    });
 
     // ================= DESTINATION PATCH API =================
 
