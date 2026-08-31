@@ -5,8 +5,9 @@ const { jwtVerify } = require("jose-cjs");
 const app = express();
 require("dotenv").config();
 
-const port = process.env.PORT;
+const port = process.env.PORT || 5000;
 
+// 1. Enable JSON parsing and CORS for all cross-origin client requests
 app.use(express.json());
 app.use(cors());
 
@@ -21,7 +22,7 @@ const { createRemoteJWKSet } = require("jose-cjs");
 
 const uri = process.env.MONGODB_URI;
 
-// Create a MongoClient with a MongoClientOptions object to set the Stable API version
+// 2. Configure MongoDB client with Strict API for forward compatibility
 const client = new MongoClient(uri, {
   serverApi: {
     version: ServerApiVersion.v1,
@@ -32,6 +33,7 @@ const client = new MongoClient(uri, {
 
 // JWT start from here
 
+// 3. Cache the JWKS from the client's auth server to verify JWT signatures locally
 const JWKS = createRemoteJWKSet(
   new URL(`${process.env.CLIENT_URL}/api/auth/jwks`),
 );
@@ -39,6 +41,7 @@ const JWKS = createRemoteJWKSet(
 const verifyToken = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
+  // 4. Reject requests missing the Authorization header entirely
   if (!authHeader) {
     return res.status(401).send({
       message: "Unauthorized",
@@ -47,6 +50,7 @@ const verifyToken = async (req, res, next) => {
 
   const token = authHeader.split(" ")[1];
 
+  // 5. Reject requests where the Bearer token is malformed or missing
   if (!token) {
     return res.status(401).send({
       message: "Unauthorized",
@@ -54,6 +58,7 @@ const verifyToken = async (req, res, next) => {
   }
 
   try {
+    // 6. Validate the token against the remote JWKS public keys
     await jwtVerify(token, JWKS);
 
     next();
@@ -82,22 +87,25 @@ async function run() {
 
     app.get("/destination", async (req, res) => {
       try {
-        const { location, duration, budget, people } = req.query;
+        const { location, search, duration, budget, people, page = 1, limit = 6 } = req.query;
 
+        // 7. Dynamically build the MongoDB query object based on provided filters
         const query = {};
+        
+        const searchTerm = search || location;
 
-        // Location search
-        if (location) {
+        // Location/Name search
+        if (searchTerm) {
           query.$or = [
             {
               destinationName: {
-                $regex: location,
+                $regex: searchTerm,
                 $options: "i",
               },
             },
             {
               country: {
-                $regex: location,
+                $regex: searchTerm,
                 $options: "i",
               },
             },
@@ -125,10 +133,21 @@ async function run() {
           };
         }
 
-        const result = await destinationCollection.find(query).toArray();
+        const pageNum = parseInt(page);
+        const limitNum = parseInt(limit);
 
-        res.send(result);
+        // 8. Execute the query with skip and limit for pagination, and calculate total count
+        const total = await destinationCollection.countDocuments(query);
+        const result = await destinationCollection
+          .find(query)
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .toArray();
+
+        // Support both old and new response formats for backward compatibility
+        res.send({ data: result, total, page: pageNum, limit: limitNum, totalPages: Math.ceil(total / limitNum) });
       } catch (error) {
+        // 9. Catch and log any database or parsing errors during search
         console.error("Destination search error:", error);
 
         res.status(500).send({
@@ -144,6 +163,7 @@ async function run() {
       try {
         const { id } = req.params;
 
+        // 10. Fetch a single destination by its unique MongoDB ObjectId
         const result = await destinationCollection.findOne({
           _id: new ObjectId(id),
         });
@@ -171,6 +191,7 @@ async function run() {
       try {
         const bookingData = req.body;
 
+        // 11. Insert the validated booking payload into the Bookings collection
         const result = await bookingCollection.insertOne(bookingData);
 
         res.send(result);
@@ -190,6 +211,7 @@ async function run() {
       try {
         const { userId } = req.params;
 
+        // 12. Retrieve all bookings associated with the provided user ID string
         const result = await bookingCollection.find({ userId }).toArray();
 
         res.send(result);
@@ -230,7 +252,30 @@ async function run() {
       }
     });
 
-    //============= Booking CAncel API ==================
+    //============= Booking PATCH API ==================
+
+    app.patch("/booking/:bookingId", verifyToken, async (req, res) => {
+      try {
+        const { bookingId } = req.params;
+        const updatedData = req.body;
+
+        // 13. Update specific fields (e.g., guests) of an existing booking without overwriting the whole document
+        const result = await bookingCollection.updateOne(
+          { _id: new ObjectId(bookingId) },
+          { $set: updatedData }
+        );
+
+        res.send(result);
+      } catch (error) {
+        console.error("Booking update error:", error);
+        res.status(500).send({
+          message: "Failed to update booking",
+          error: error.message,
+        });
+      }
+    });
+
+    //============= Booking Cancel API ==================
 
     app.delete("/booking/:bookingId", async (req, res) => {
       const { bookingId } = req.params;
@@ -276,6 +321,7 @@ async function run() {
       try {
         const { id } = req.params;
 
+        // 14. Permanently remove the destination document from the database
         const result = await destinationCollection.deleteOne({
           _id: new ObjectId(id),
         });
@@ -327,6 +373,7 @@ run().catch(console.dir);
 
 // ================= SERVER =================
 
+// 15. Start the Express server and listen for incoming HTTP requests on the configured port
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
